@@ -19,7 +19,7 @@ from litex.soc.cores.led import LedChaser
 from litex_boards.platforms import icebreaker
 from litex_boards.targets.icebreaker import _CRG
 
-from litex.soc.cores.spi.spi_bone import SpiWishboneBridge
+from litex.soc.cores.spi.spi_bone import SPIBone
 
 # IOs ----------------------------------------------------------------------------------------------
 
@@ -51,8 +51,8 @@ class RP2040PMODTestSoC(SoCCore):
         )
 
         # RP2040 <-> MMAP over SPIBone -------------------------------------------------------------
-        self.submodules.spibone = SpiWishboneBridge(platform.request("rp2040_spi"))
-        self.bus.add_master(name="rp2040", master=self.spibone.wishbone)
+        self.submodules.spibone = SPIBone(platform.request("rp2040_spi"))
+        self.bus.add_master(name="rp2040", master=self.spibone.bus)
 
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(

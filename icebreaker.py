@@ -39,6 +39,7 @@ def rp2040_spi_ios(pmod="PMOD1"):
 class RP2040PMODTestSoC(SoCCore):
     def __init__(self, sys_clk_freq=int(50e6)):
         platform = icebreaker.Platform()
+        platform.add_extension(icebreaker.break_off_pmod)
         platform.add_extension(rp2040_spi_ios(pmod="PMOD1A"))
 
         # CRG --------------------------------------------------------------------------------------
@@ -56,7 +57,7 @@ class RP2040PMODTestSoC(SoCCore):
 
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(
-            pads         = platform.request_all("user_led_n"),
+            pads         = platform.request_all("user_led"),
             polarity     = 1,
             sys_clk_freq = sys_clk_freq)
 

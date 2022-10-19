@@ -14,12 +14,12 @@ from litex.build.generic_platform import *
 
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
+from litex.soc.cores.spi.spi_bone import SPIBone
 from litex.soc.cores.led import LedChaser
+from litex.soc.cores.gpio import GPIOIn
 
 from litex_boards.platforms import icebreaker
 from litex_boards.targets.icebreaker import _CRG
-
-from litex.soc.cores.spi.spi_bone import SPIBone
 
 # IOs ----------------------------------------------------------------------------------------------
 
@@ -60,6 +60,11 @@ class RP2040PMODTestSoC(SoCCore):
             pads         = platform.request_all("user_led"),
             polarity     = 1,
             sys_clk_freq = sys_clk_freq)
+
+        # Buttons ----------------------------------------------------------------------------------
+        self.submodules.buttons = GPIOIn(
+            pads = platform.request_all("user_btn")
+        )
 
 # Flash --------------------------------------------------------------------------------------------
 

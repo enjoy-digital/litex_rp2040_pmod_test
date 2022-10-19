@@ -15,6 +15,7 @@ from litex.build.generic_platform import *
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
 from litex.soc.interconnect import wishbone
+from litex.soc.interconnect import axi
 from litex.soc.cores.spi.spi_bone import SPIBone
 from litex.soc.cores.led import LedChaser
 from litex.soc.cores.gpio import GPIOIn
@@ -53,19 +54,20 @@ class RP2040PMODTestSoC(SoCCore):
         )
 
         # RP2040 <-> MMAP over SPIBone -------------------------------------------------------------
-        assert mode in ["litex", "hybrid"]
+        assert mode in ["litex", "hybrid-wishbone", "hybrid-axi-lite"]
 
         # Full LiteX flow: Directly integrate SPIBone to the LiteX SoC.
         if mode == "litex":
             self.submodules.spibone = SPIBone(platform.request("rp2040_spi"))
             self.bus.add_master(name="rp2040", master=self.spibone.bus)
 
-        # Hybrid LiteX flow: First generate SPIBone core and re-integrate it to the LiteX SoC.
-        if mode == "hybrid":
-            os.system(f"./spibone_gen.py --vendor=lattice")
+        # Hybrid LiteX flow: First generate SPIBone core with Wishbone interface and re-integrate
+        # it to the LiteX SoC.
+        if mode == "hybrid-wishbone":
+            os.system(f"./spibone_gen.py --bus-standard=wishbone --vendor=lattice")
             bus = wishbone.Interface(address_width=32, data_width=32)
             spi = platform.request("rp2040_spi")
-            self.specials += Instance("spibone_core",
+            self.specials += Instance("spibone_core_lattice",
                 # Clk/Rst.
                 i_clk = ClockSignal("sys"),
                 i_rst = ResetSignal("sys"),
@@ -90,7 +92,55 @@ class RP2040PMODTestSoC(SoCCore):
                 i_bus_err   = bus.err,
             )
             self.bus.add_master(name="rp2040", master=bus)
-            platform.add_source("build/gateware/spibone_core.v")
+            platform.add_source("build/gateware/spibone_core_lattice.v")
+
+        # Hybrid LiteX flow: First generate SPIBone core with AXI-Lite interface and re-integrate
+        # it to the LiteX SoC.
+        if mode == "hybrid-axi-lite":
+            os.system(f"./spibone_gen.py --bus-standard=axi-lite --vendor=lattice")
+            bus = axi.AXILiteInterface(address_width=32, data_width=32)
+            spi = platform.request("rp2040_spi")
+            self.specials += Instance("spibone_core_lattice",
+                # Clk/Rst.
+                i_clk = ClockSignal("sys"),
+                i_rst = ResetSignal("sys"),
+
+                # RP2040 SPI.
+                i_spi_clk   = spi.clk,
+                i_spi_cs_n  = spi.cs_n,
+                i_spi_mosi  = spi.mosi,
+                io_spi_miso = spi.miso,
+
+                # AXI-Lite Bus.
+                # AW.
+                o_bus_awaddr   = bus.aw.addr,
+                o_bus_awvalid  = bus.aw.valid,
+                i_bus_awready  = bus.aw.ready,
+
+                # W.
+                o_bus_wdata    = bus.w.data,
+                o_bus_wstrb    = bus.w.strb,
+                o_bus_wvalid   = bus.w.valid,
+                i_bus_wready   = bus.w.ready,
+
+                # B.
+                i_bus_bresp    = bus.b.resp,
+                i_bus_bvalid   = bus.b.valid,
+                o_bus_bready   = bus.b.ready,
+
+                # AR.
+                o_bus_araddr   = bus.ar.addr,
+                o_bus_arvalid  = bus.ar.valid,
+                i_bus_arready  = bus.ar.ready,
+
+                # R.
+                i_bus_rdata    = bus.r.data,
+                i_bus_rresp    = bus.r.resp,
+                i_bus_rvalid   = bus.r.valid,
+                o_bus_rready   = bus.r.ready,
+            )
+            self.bus.add_master(name="rp2040", master=bus)
+            platform.add_source("build/gateware/spibone_core_lattice.v")
 
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(
@@ -118,7 +168,7 @@ def main():
     parser.add_argument("--load",         action="store_true", help="Load bitstream.")
     parser.add_argument("--flash",        action="store_true", help="Flash Bitstream and BIOS.")
     parser.add_argument("--sys-clk-freq", default=50e6,        help="System clock frequency (default: 50MHz).")
-    parser.add_argument("--mode",         default="litex",     help="Choose SPIBone instance mode(litex or hybrid).")
+    parser.add_argument("--mode",         default="litex",     help="Choose SPIBone instance mode(litex, hybrid-wishbone or hybrid-axi-lite).")
     args = parser.parse_args()
 
     soc = RP2040PMODTestSoC(

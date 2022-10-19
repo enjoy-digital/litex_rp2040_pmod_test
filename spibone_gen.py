@@ -100,7 +100,7 @@ def main():
     platform = platform_cls(device="", io=_io)
     core     = SPIBoneCore(platform, bus_standard=args.bus_standard)
     builder  = Builder(core, output_dir="build")
-    builder.build(build_name=f"spibone_core_{args.vendor}", run=False)
+    builder.build(build_name="spibone_core", run=False)
 
 if __name__ == "__main__":
     main()

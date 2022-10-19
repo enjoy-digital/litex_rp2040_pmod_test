@@ -67,7 +67,7 @@ class RP2040PMODTestSoC(SoCCore):
             os.system(f"./spibone_gen.py --bus-standard=wishbone --vendor=lattice")
             bus = wishbone.Interface(address_width=32, data_width=32)
             spi = platform.request("rp2040_spi")
-            self.specials += Instance("spibone_core_lattice",
+            self.specials += Instance("spibone_core",
                 # Clk/Rst.
                 i_clk = ClockSignal("sys"),
                 i_rst = ResetSignal("sys"),
@@ -92,7 +92,7 @@ class RP2040PMODTestSoC(SoCCore):
                 i_bus_err   = bus.err,
             )
             self.bus.add_master(name="rp2040", master=bus)
-            platform.add_source("build/gateware/spibone_core_lattice.v")
+            platform.add_source("build/gateware/spibone_core.v")
 
         # Hybrid LiteX flow: First generate SPIBone core with AXI-Lite interface and re-integrate
         # it to the LiteX SoC.
@@ -100,7 +100,7 @@ class RP2040PMODTestSoC(SoCCore):
             os.system(f"./spibone_gen.py --bus-standard=axi-lite --vendor=lattice")
             bus = axi.AXILiteInterface(address_width=32, data_width=32)
             spi = platform.request("rp2040_spi")
-            self.specials += Instance("spibone_core_lattice",
+            self.specials += Instance("spibone_core",
                 # Clk/Rst.
                 i_clk = ClockSignal("sys"),
                 i_rst = ResetSignal("sys"),
@@ -140,7 +140,7 @@ class RP2040PMODTestSoC(SoCCore):
                 o_bus_rready   = bus.r.ready,
             )
             self.bus.add_master(name="rp2040", master=bus)
-            platform.add_source("build/gateware/spibone_core_lattice.v")
+            platform.add_source("build/gateware/spibone_core.v")
 
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(

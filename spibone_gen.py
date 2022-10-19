@@ -27,6 +27,7 @@ from litex.build.altera.platform import AlteraPlatform
 from litex.build.lattice.platform import LatticePlatform
 
 from litex.soc.interconnect import wishbone
+from litex.soc.interconnect import axi
 from litex.soc.integration.soc import SoCBusHandler, SoCRegion
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
@@ -52,7 +53,7 @@ _io = [
 # SPIBone Core -------------------------------------------------------------------------------------
 
 class SPIBoneCore(SoCMini):
-    def __init__(self, platform):
+    def __init__(self, platform, bus_standard="wishbone"):
         # CRG --------------------------------------------------------------------------------------
         self.submodules.crg = CRG(platform.request("clk"), platform.request("rst"))
 
@@ -63,14 +64,28 @@ class SPIBoneCore(SoCMini):
         self.submodules.spibone = spibone = SPIBone(platform.request("spi"))
 
         # MMAP Bus ---------------------------------------------------------------------------------
-        platform.add_extension(spibone.bus.get_ios("bus"))
-        self.comb += spibone.bus.connect_to_pads(self.platform.request("bus"), mode="master")
+        assert bus_standard in ["wishbone", "axi-lite"]
+
+        # Wishbone.
+        if bus_standard == "wishbone":
+            # SPIBone is already in Wishbone, just expose the Bus.
+            platform.add_extension(spibone.bus.get_ios("bus"))
+            self.comb += spibone.bus.connect_to_pads(self.platform.request("bus"), mode="master")
+
+        # AXI-Lite.
+        if bus_standard == "axi-lite":
+            # SPIBone is in Wishbone, converter to AXI-Lite and expose the AXI-Lite Bus.
+            axil_bus = axi.AXILiteInterface(address_width=32, data_width=32)
+            platform.add_extension(axil_bus.get_ios("bus"))
+            self.submodules += axi.Wishbone2AXILite(spibone.bus, axil_bus)
+            self.comb += axil_bus.connect_to_pads(self.platform.request("bus"), mode="master")
 
 # Build --------------------------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="SPIBone standalone core generator.")
-    parser.add_argument("--vendor", default="lattice", help="FPGA Vendor.")
+    parser.add_argument("--vendor",       default="lattice",  help="FPGA Vendor.")
+    parser.add_argument("--bus-standard", default="wishbone", help="Exposed Bus Standard (wishbone, axi-lite).")
     args = parser.parse_args()
 
     # Convert/Check Arguments ----------------------------------------------------------------------
@@ -83,7 +98,7 @@ def main():
 
     # Generate core --------------------------------------------------------------------------------
     platform = platform_cls(device="", io=_io)
-    core     = SPIBoneCore(platform)
+    core     = SPIBoneCore(platform, bus_standard=args.bus_standard)
     builder  = Builder(core, output_dir="build")
     builder.build(build_name=f"spibone_core_{args.vendor}", run=False)
 

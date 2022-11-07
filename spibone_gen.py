@@ -70,7 +70,7 @@ class SPIBoneCore(SoCMini):
         if bus_standard == "wishbone":
             # SPIBone is already in Wishbone, just expose the Bus.
             platform.add_extension(spibone.bus.get_ios("bus"))
-            self.comb += spibone.bus.connect_to_pads(self.platform.request("bus"), mode="master")
+            self.comb += spibone.bus.connect_to_pads(platform.request("bus"), mode="master")
 
         # AXI-Lite.
         if bus_standard == "axi-lite":
@@ -78,7 +78,7 @@ class SPIBoneCore(SoCMini):
             axil_bus = axi.AXILiteInterface(address_width=32, data_width=32)
             platform.add_extension(axil_bus.get_ios("bus"))
             self.submodules += axi.Wishbone2AXILite(spibone.bus, axil_bus)
-            self.comb += axil_bus.connect_to_pads(self.platform.request("bus"), mode="master")
+            self.comb += axil_bus.connect_to_pads(platform.request("bus"), mode="master")
 
 # Build --------------------------------------------------------------------------------------------
 

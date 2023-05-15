@@ -363,12 +363,15 @@ void usb_set_device_configuration(volatile struct usb_setup_packet *pkt) {
 #define LITEX_READ  0xc3
 #define LITEX_WRITE 0x43
 
+#define SPIBONE_WRITE 0
+#define SPIBONE_READ  1
+
 uint8_t request_address[4];
-uint8_t spi_out_buf[4], spi_in_buf[4];
+uint8_t spibone_command, spi_in_buf[4];
 
 void usb_handle_litex_read() {
-    spi_out_buf[0] = 1;
-    spi_write_blocking(spi_default, spi_out_buf, 1);
+    spibone_command = SPIBONE_READ;
+    spi_write_blocking(spi_default, &spibone_command, 1);
     spi_write_blocking(spi_default, request_address, 4);
     spi_read_blocking(spi_default, 0, spi_in_buf, 1);
     spi_read_blocking(spi_default, 0, spi_in_buf, 4);
@@ -376,8 +379,8 @@ void usb_handle_litex_read() {
 }
 
 void usb_handle_litex_write(uint8_t *write_data) {
-    spi_out_buf[0] = 0;
-    spi_write_blocking(spi_default, spi_out_buf, 1);
+    spibone_command = SPIBONE_WRITE;
+    spi_write_blocking(spi_default, &spibone_command, 1);
     spi_write_blocking(spi_default, request_address, 4);
     spi_write_blocking(spi_default, write_data, 4);
     spi_read_blocking(spi_default, 0, spi_in_buf, 1);

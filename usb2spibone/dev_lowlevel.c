@@ -224,7 +224,7 @@ void usb_start_transfer(struct usb_endpoint_configuration *ep, uint8_t *buf, uin
     // For multi packet transfers see the tinyusb port.
     assert(len <= 64);
 
-    printf("Start transfer of len %d on ep addr 0x%x\n", len, ep->descriptor->bEndpointAddress);
+    //printf("Start transfer of len %d on ep addr 0x%x\n", len, ep->descriptor->bEndpointAddress);
 
     // Prepare buffer control register value
     uint32_t val = len | USB_BUF_CTRL_AVAIL;
@@ -380,30 +380,54 @@ void usb_set_device_configuration(volatile struct usb_setup_packet *pkt) {
     configured = true;
 }
 
+#define SPI_SCK_PIN  10
+#define SPI_MOSI_PIN 11
+#define SPI_MISO_PIN 12
+#define SPI_CSN_PIN  13
+
 #define LITEX_READ  0xc3
 #define LITEX_WRITE 0x43
 
 #define SPIBONE_WRITE 0
 #define SPIBONE_READ  1
 
+#define DEBUG 0
+
 uint8_t request_address[4];
 uint8_t spibone_command, spi_in_buf[4];
 
+void swap_byte_order(uint8_t *buf) {
+    uint8_t tmp = buf[0];
+    buf[0] = buf[3];
+    buf[3] = tmp;
+    tmp    = buf[1];
+    buf[1] = buf[2];
+    buf[2] = tmp;
+}
+
 void usb_handle_litex_read() {
     spibone_command = SPIBONE_READ;
-    spi_write_blocking(spi_default, &spibone_command, 1);
-    spi_write_blocking(spi_default, request_address, 4);
-    spi_read_blocking(spi_default, 0, spi_in_buf, 1);
-    spi_read_blocking(spi_default, 0, spi_in_buf, 4);
+    gpio_put(SPI_CSN_PIN, 0);
+    spi_write_blocking(spi1, &spibone_command, 1);
+    spi_write_blocking(spi1, request_address, 4);
+    spi_read_blocking(spi1, 0, spi_in_buf, 1);
+    spi_read_blocking(spi1, 0, spi_in_buf, 4);
+    gpio_put(SPI_CSN_PIN, 1);
+    swap_byte_order(spi_in_buf);
     usb_start_transfer(usb_get_endpoint_configuration(EP0_IN_ADDR), spi_in_buf, 4);
 }
 
 void usb_handle_litex_write(uint8_t *write_data) {
+    if (DEBUG) printf("handle write 0x%08x @ 0x%08x\n", *(uint32_t *)write_data, *(uint32_t *)request_address);
+    swap_byte_order(write_data);
     spibone_command = SPIBONE_WRITE;
-    spi_write_blocking(spi_default, &spibone_command, 1);
-    spi_write_blocking(spi_default, request_address, 4);
-    spi_write_blocking(spi_default, write_data, 4);
-    spi_read_blocking(spi_default, 0, spi_in_buf, 1);
+    gpio_put(SPI_CSN_PIN, 0);
+    spi_write_blocking(spi1, &spibone_command, 1);
+    spi_write_blocking(spi1, request_address, 4);
+    spi_write_blocking(spi1, write_data, 4);
+    spi_read_blocking(spi1, 0, spi_in_buf, 1);
+    gpio_put(SPI_CSN_PIN, 1);
+    usb_acknowledge_out_request();
 }
 
 /**
@@ -459,15 +483,23 @@ void usb_handle_setup_packet(void) {
         } else if (req == USB_REQUEST_GET_STATUS) {
             printf("GET_STATUS request\r\n");
             usb_handle_get_status(pkt);
-        } else if (req_type == LITEX_READ && req == 0 && pkt->wLength == 4) {
-            memcpy(request_address, addr_ptr, 4);
-            usb_handle_litex_read();
-        } else if (req_type == LITEX_WRITE && req == 0 && pkt->wLength == 4) {
-            memcpy(request_address, addr_ptr, 4);
-            usb_acknowledge_out_request();
-        } else {
-            printf("Other IN request (0x%x)\r\n", pkt->bRequest);
         }
+    } else if (req_type == LITEX_READ && req == 0 && pkt->wLength == 4) {
+        if (DEBUG) printf("SPIBone read 0x%8x\n", *(uint32_t *)addr_ptr);
+        request_address[0] = addr_ptr[3];
+        request_address[1] = addr_ptr[2];
+        request_address[2] = addr_ptr[1];
+        request_address[3] = addr_ptr[0];
+        usb_handle_litex_read();
+    } else if (req_type == LITEX_WRITE && req == 0 && pkt->wLength == 4) {
+        if (DEBUG) printf("SPIBone write 0x%08x\n", *(uint32_t *)addr_ptr);
+        request_address[0] = addr_ptr[3];
+        request_address[1] = addr_ptr[2];
+        request_address[2] = addr_ptr[1];
+        request_address[3] = addr_ptr[0];
+        usb_start_transfer(usb_get_endpoint_configuration(EP0_OUT_ADDR), NULL, 4);
+    } else {
+        printf("Other IN request (0x%x)\r\n", pkt->bRequest);
     }
 }
 
@@ -494,7 +526,7 @@ static void usb_handle_ep_buff_done(struct usb_endpoint_configuration *ep) {
  */
 static void usb_handle_buff_done(uint ep_num, bool in) {
     uint8_t ep_addr = ep_num | (in ? USB_DIR_IN : 0);
-    printf("EP %d (in = %d) done\n", ep_num, in);
+    //printf("EP %d (in = %d) done\n", ep_num, in);
     for (uint i = 0; i < USB_NUM_ENDPOINTS; i++) {
         struct usb_endpoint_configuration *ep = &dev_config.endpoints[i];
         if (ep->descriptor && ep->handler) {
@@ -582,30 +614,40 @@ void ep0_in_handler(uint8_t *buf, uint16_t len) {
         struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP0_OUT_ADDR);
         usb_start_transfer(ep, NULL, 0);
     }
+    if (DEBUG) printf("IN len %d done\n", len);
 }
 
 void ep0_out_handler(uint8_t *buf, uint16_t len) {
+    // for (int i=0; i<64; i++) printf("OUT EP buffer [%d] = %02x\n", i, buf[i]);
     if (len == 4) usb_handle_litex_write(buf);
+    if (len) if (DEBUG) printf("OUT len %d done\n", len);
+    else     if (DEBUG) puts("OUT ZLP\n");
 }
-
-#define SPI_SCK_PIN  10
-#define SPI_MOSI_PIN 11
-#define SPI_MISO_PIN 12
-#define SPI_CSN_PIN  13
 
 int main(void) {
     stdio_init_all();
     printf("stdio init done\n");
 
     // Enable SPI 0 at 1 MHz and connect to GPIOs
-    spi_init(spi_default, 1000 * 1000);
-    spi_set_slave(spi_default, true);
+    spi_init(spi1, 1000 * 1000);
+    spi_set_slave(spi1, false);
     gpio_set_function(SPI_SCK_PIN,  GPIO_FUNC_SPI);
     gpio_set_function(SPI_MOSI_PIN, GPIO_FUNC_SPI);
     gpio_set_function(SPI_MISO_PIN, GPIO_FUNC_SPI);
     gpio_set_function(SPI_CSN_PIN,  GPIO_FUNC_SPI);
+    spi_set_format(spi1,
+                    8,      // Number of bits per transfer
+                    0,      // Polarity (CPOL)
+                    0,      // Phase (CPHA)
+                    SPI_MSB_FIRST);
+
     // Make the SPI pins available to picotool
     bi_decl(bi_4pins_with_func(SPI_MISO_PIN, SPI_MOSI_PIN, SPI_SCK_PIN, SPI_CSN_PIN, GPIO_FUNC_SPI));
+
+    gpio_init(SPI_CSN_PIN);
+    gpio_set_dir(SPI_CSN_PIN, GPIO_OUT);
+    gpio_put(SPI_CSN_PIN, 1);
+
     printf("SPI init done\n");
 
     usb_device_init();

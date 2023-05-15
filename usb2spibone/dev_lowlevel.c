@@ -8,6 +8,8 @@
 
 // Pico
 #include "pico/stdlib.h"
+#include "pico/binary_info.h"
+#include "hardware/spi.h"
 
 // For memcpy
 #include <string.h>
@@ -33,8 +35,6 @@
 // later on
 void ep0_in_handler(uint8_t *buf, uint16_t len);
 void ep0_out_handler(uint8_t *buf, uint16_t len);
-void ep1_out_handler(uint8_t *buf, uint16_t len);
-void ep2_in_handler(uint8_t *buf, uint16_t len);
 
 // Global device address
 static bool should_set_address = false;
@@ -68,23 +68,6 @@ static struct usb_device_configuration dev_config = {
                         // EP0 in and out share a data buffer
                         .data_buffer = &usb_dpram->ep0_buf_a[0],
                 },
-                {
-                        .descriptor = &ep1_out,
-                        .handler = &ep1_out_handler,
-                        // EP1 starts at offset 0 for endpoint control
-                        .endpoint_control = &usb_dpram->ep_ctrl[0].out,
-                        .buffer_control = &usb_dpram->ep_buf_ctrl[1].out,
-                        // First free EPX buffer
-                        .data_buffer = &usb_dpram->epx_data[0 * 64],
-                },
-                {
-                        .descriptor = &ep2_in,
-                        .handler = &ep2_in_handler,
-                        .endpoint_control = &usb_dpram->ep_ctrl[1].in,
-                        .buffer_control = &usb_dpram->ep_buf_ctrl[2].in,
-                        // Second free EPX buffer
-                        .data_buffer = &usb_dpram->epx_data[1 * 64],
-                }
         }
 };
 
@@ -377,19 +360,43 @@ void usb_set_device_configuration(volatile struct usb_setup_packet *pkt) {
     configured = true;
 }
 
+#define LITEX_READ  0xc3
+#define LITEX_WRITE 0x43
+
+uint8_t request_address[4];
+uint8_t spi_out_buf[4], spi_in_buf[4];
+
+void usb_handle_litex_read() {
+    spi_out_buf[0] = 1;
+    spi_write_blocking(spi_default, spi_out_buf, 1);
+    spi_write_blocking(spi_default, request_address, 4);
+    spi_read_blocking(spi_default, 0, spi_in_buf, 1);
+    spi_read_blocking(spi_default, 0, spi_in_buf, 4);
+    usb_start_transfer(usb_get_endpoint_configuration(EP0_IN_ADDR), spi_in_buf, 4);
+}
+
+void usb_handle_litex_write(uint8_t *write_data) {
+    spi_out_buf[0] = 0;
+    spi_write_blocking(spi_default, spi_out_buf, 1);
+    spi_write_blocking(spi_default, request_address, 4);
+    spi_write_blocking(spi_default, write_data, 4);
+    spi_read_blocking(spi_default, 0, spi_in_buf, 1);
+}
+
 /**
  * @brief Respond to a setup packet from the host.
  *
  */
 void usb_handle_setup_packet(void) {
     volatile struct usb_setup_packet *pkt = (volatile struct usb_setup_packet *) &usb_dpram->setup_packet;
-    uint8_t req_direction = pkt->bmRequestType;
+    uint8_t req_type = pkt->bmRequestType;
     uint8_t req = pkt->bRequest;
+    uint8_t *addr_ptr = (uint8_t *)pkt + 2;
 
     // Reset PID to 1 for EP0 IN
     usb_get_endpoint_configuration(EP0_IN_ADDR)->next_pid = 1u;
 
-    if (req_direction == USB_DIR_OUT) {
+    if (req_type == USB_DIR_OUT) {
         if (req == USB_REQUEST_SET_ADDRESS) {
             usb_set_device_address(pkt);
         } else if (req == USB_REQUEST_SET_CONFIGURATION) {
@@ -398,7 +405,7 @@ void usb_handle_setup_packet(void) {
             usb_acknowledge_out_request();
             printf("Other OUT request (0x%x)\r\n", pkt->bRequest);
         }
-    } else if (req_direction == USB_DIR_IN) {
+    } else if (req_type == USB_DIR_IN) {
         if (req == USB_REQUEST_GET_DESCRIPTOR) {
             uint16_t descriptor_type = pkt->wValue >> 8;
 
@@ -421,8 +428,14 @@ void usb_handle_setup_packet(void) {
                 default:
                     printf("Unhandled GET_DESCRIPTOR type 0x%x\r\n", descriptor_type);
             }
+        } else if (req_type == LITEX_READ && req == 0 && pkt->wLength == 4) {
+            memcpy(request_address, addr_ptr, 4);
+            usb_handle_litex_read();
+        } else if (req_type == LITEX_WRITE && req == 0 && pkt->wLength == 4) {
+            memcpy(request_address, addr_ptr, 4);
+            usb_acknowledge_out_request();
         } else {
-            printf("Other IN request (0x%x)\r\n", pkt->bRequest);
+            printf("Other request (0x%x)\r\n", pkt->bRequest);
         }
     }
 }
@@ -541,35 +554,36 @@ void ep0_in_handler(uint8_t *buf, uint16_t len) {
 }
 
 void ep0_out_handler(uint8_t *buf, uint16_t len) {
-    ;
+    if (len == 4) usb_handle_litex_write(buf);
 }
 
-// Device specific functions
-void ep1_out_handler(uint8_t *buf, uint16_t len) {
-    printf("RX %d bytes from host\n", len);
-    // Send data back to host
-    struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP2_IN_ADDR);
-    usb_start_transfer(ep, buf, len);
-}
-
-void ep2_in_handler(uint8_t *buf, uint16_t len) {
-    printf("Sent %d bytes to host\n", len);
-    // Get ready to rx again from host
-    usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
-}
+#define SPI_SCK_PIN  10
+#define SPI_MOSI_PIN 11
+#define SPI_MISO_PIN 12
+#define SPI_CSN_PIN  13
 
 int main(void) {
     stdio_init_all();
-    printf("USB Device Low-Level hardware example\n");
+    printf("stdio init done\n");
+
+    // Enable SPI 0 at 1 MHz and connect to GPIOs
+    spi_init(spi_default, 1000 * 1000);
+    spi_set_slave(spi_default, true);
+    gpio_set_function(SPI_SCK_PIN,  GPIO_FUNC_SPI);
+    gpio_set_function(SPI_MOSI_PIN, GPIO_FUNC_SPI);
+    gpio_set_function(SPI_MISO_PIN, GPIO_FUNC_SPI);
+    gpio_set_function(SPI_CSN_PIN,  GPIO_FUNC_SPI);
+    // Make the SPI pins available to picotool
+    bi_decl(bi_4pins_with_func(SPI_MISO_PIN, SPI_MOSI_PIN, SPI_SCK_PIN, SPI_CSN_PIN, GPIO_FUNC_SPI));
+    printf("SPI init done\n");
+
     usb_device_init();
+    printf("USB init done\n");
 
     // Wait until configured
     while (!configured) {
         tight_loop_contents();
     }
-
-    // Get ready to rx from host
-    usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
 
     // Everything is interrupt driven so just loop here
     while (1) {

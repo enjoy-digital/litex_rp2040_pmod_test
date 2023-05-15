@@ -82,7 +82,7 @@ static const struct usb_interface_descriptor interface_descriptor = {
         .bDescriptorType    = USB_DT_INTERFACE,
         .bInterfaceNumber   = 0,
         .bAlternateSetting  = 0,
-        .bNumEndpoints      = 2,    // Interface has 2 endpoints
+        .bNumEndpoints      = 0,    // Interface has 0 endpoints
         .bInterfaceClass    = 0xff, // Vendor specific endpoint
         .bInterfaceSubClass = 0,
         .bInterfaceProtocol = 0,
@@ -94,7 +94,7 @@ static const struct usb_configuration_descriptor config_descriptor = {
         .bDescriptorType = USB_DT_CONFIG,
         .wTotalLength    = (sizeof(config_descriptor) +
                             sizeof(interface_descriptor)),
-        .bNumInterfaces  = 1,
+        .bNumInterfaces  = 0,
         .bConfigurationValue = 1, // Configuration 1
         .iConfiguration = 0,      // No string
         .bmAttributes = 0xc0,     // attributes: self powered, no remote wakeup

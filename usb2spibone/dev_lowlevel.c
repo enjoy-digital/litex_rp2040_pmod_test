@@ -323,6 +323,26 @@ void usb_handle_string_descriptor(volatile struct usb_setup_packet *pkt) {
     usb_start_transfer(usb_get_endpoint_configuration(EP0_IN_ADDR), &ep0_buf[0], MIN(len, pkt->wLength));
 }
 
+void usb_handle_debug_descriptor(volatile struct usb_setup_packet *pkt) {
+    // EP0 in
+    struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP0_IN_ADDR);
+    // Always respond with pid 1
+    ep->next_pid = 1;
+    uint8_t empty[4];
+    *((uint32_t *)empty) = 0;
+    usb_start_transfer(ep, empty, MIN(4, pkt->wLength));
+}
+
+void usb_handle_get_status(volatile struct usb_setup_packet *pkt) {
+    // EP0 in
+    struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP0_IN_ADDR);
+    // Always respond with pid 1
+    ep->next_pid = 1;
+    uint8_t empty[2];
+    *((uint16_t *)empty) = 0;
+    usb_start_transfer(ep, empty, MIN(2, pkt->wLength));
+}
+
 /**
  * @brief Sends a zero length status packet back to the host.
  */
@@ -428,9 +448,17 @@ void usb_handle_setup_packet(void) {
                     printf("GET STRING DESCRIPTOR\r\n");
                     break;
 
+                case USB_DT_DEBUG:
+                    usb_handle_debug_descriptor(pkt);
+                    printf("GET DEBUG DESCRIPTOR\r\n");
+                    break;
+
                 default:
                     printf("Unhandled GET_DESCRIPTOR type 0x%x\r\n", descriptor_type);
             }
+        } else if (req == USB_REQUEST_GET_STATUS) {
+            printf("GET_STATUS request\r\n");
+            usb_handle_get_status(pkt);
         } else if (req_type == LITEX_READ && req == 0 && pkt->wLength == 4) {
             memcpy(request_address, addr_ptr, 4);
             usb_handle_litex_read();
@@ -438,7 +466,7 @@ void usb_handle_setup_packet(void) {
             memcpy(request_address, addr_ptr, 4);
             usb_acknowledge_out_request();
         } else {
-            printf("Other request (0x%x)\r\n", pkt->bRequest);
+            printf("Other IN request (0x%x)\r\n", pkt->bRequest);
         }
     }
 }

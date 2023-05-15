@@ -31,11 +31,12 @@
 #define USB_TRANSFER_TYPE_BITS 0x3
 
 // Descriptor types
-#define USB_DT_DEVICE 0x01
-#define USB_DT_CONFIG 0x02
-#define USB_DT_STRING 0x03
+#define USB_DT_DEVICE    0x01
+#define USB_DT_CONFIG    0x02
+#define USB_DT_STRING    0x03
 #define USB_DT_INTERFACE 0x04
-#define USB_DT_ENDPOINT 0x05
+#define USB_DT_ENDPOINT  0x05
+#define USB_DT_DEBUG     0x0a
 
 #define USB_REQUEST_GET_STATUS 0x0
 #define USB_REQUEST_CLEAR_FEATURE 0x01

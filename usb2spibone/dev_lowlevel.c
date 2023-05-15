@@ -624,12 +624,14 @@ void ep0_out_handler(uint8_t *buf, uint16_t len) {
     else     if (DEBUG) puts("OUT ZLP\n");
 }
 
+#define MHz 1000000
+
 int main(void) {
     stdio_init_all();
     printf("stdio init done\n");
 
-    // Enable SPI 0 at 1 MHz and connect to GPIOs
-    spi_init(spi1, 1000 * 1000);
+    // Enable SPI 0 and connect to GPIOs
+    spi_init(spi1, 2 * MHz);
     spi_set_slave(spi1, false);
     gpio_set_function(SPI_SCK_PIN,  GPIO_FUNC_SPI);
     gpio_set_function(SPI_MOSI_PIN, GPIO_FUNC_SPI);

@@ -1,5 +1,6 @@
 /**
  * Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+ * Copyright (c) 2023 Hans Baier <hansfbaier@gmail.com>
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */

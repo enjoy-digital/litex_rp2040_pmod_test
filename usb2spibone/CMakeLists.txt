@@ -15,13 +15,7 @@ pico_sdk_init()
 set(FAMILY rp2040)
 set(BOARD pico_sdk)
 set(TINYUSB_FAMILY_PROJECT_NAME_PREFIX "tinyusb_dev_")
-add_executable(usb2spibone
-        dev_lowlevel.c
-        )
+add_executable(usb2spibone dev_lowlevel.c)
 
 target_link_libraries(usb2spibone PRIVATE pico_stdlib hardware_resets hardware_irq hardware_spi)
 pico_add_extra_outputs(usb2spibone)
-
-# add url via pico_set_program_url
-# ls
-# usb2spibone_auto_set_url(dev_lowlevel)

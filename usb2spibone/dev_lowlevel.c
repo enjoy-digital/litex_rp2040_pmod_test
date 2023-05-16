@@ -631,7 +631,7 @@ int main(void) {
     stdio_init_all();
     printf("stdio init done\n");
 
-    // Enable SPI 0 and connect to GPIOs
+    // Enable SPI 1 and connect to GPIOs
     spi_init(spi1, 2 * MHz);
     spi_set_slave(spi1, false);
     gpio_set_function(SPI_SCK_PIN,  GPIO_FUNC_SPI);
